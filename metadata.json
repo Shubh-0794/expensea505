@@ -1,0 +1,5 @@
+{
+  "name": "Expense Splitter",
+  "description": "A modern and intuitive web application to calculate and split expenses among a group of people. Easily add participants, log expenses, and get a clear summary of who owes whom.",
+  "requestFramePermissions": []
+}

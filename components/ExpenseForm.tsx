@@ -1,15 +1,17 @@
+
 import React, { useState, useEffect } from 'react';
-import { Expense } from '../types';
+import { Expense } from '../types.ts';
 import { v4 as uuidv4 } from 'uuid';
-import Avatar from './Avatar';
-import { formatIndianCurrency } from '../utils/formatCurrency';
+import Avatar from './Avatar.tsx';
+import { formatIndianCurrency } from '../utils/formatCurrency.ts';
 
 interface ExpenseFormProps {
   people: string[];
   addExpense: (expense: Expense) => void;
+  currentUser: string | null;
 }
 
-const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense }) => {
+const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense, currentUser }) => {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
   const [paidBy, setPaidBy] = useState<string>('');
@@ -17,14 +19,18 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Update paidBy whenever people or currentUser changes
   useEffect(() => {
-    if (people.length > 0 && (!paidBy || !people.includes(paidBy))) {
+    if (people.length > 0) {
+      if (currentUser && people.includes(currentUser)) {
+        setPaidBy(currentUser);
+      } else if (!paidBy || !people.includes(paidBy)) {
         setPaidBy(people[0]);
+      }
+    } else {
+      setPaidBy('');
     }
-    if (people.length === 0) {
-        setPaidBy('');
-    }
-  }, [people, paidBy]);
+  }, [people, currentUser]);
 
   const handleToggleSplitWith = (person: string) => {
     setSplitWith(prev => 
@@ -48,13 +54,17 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense }) => {
       amount: Number(amount),
       paidBy,
       splitWith,
-      date: new Date().toISOString().slice(0, 10), // Add current date
+      date: new Date().toISOString().slice(0, 10),
     });
 
     setSuccess('Expense added successfully!');
     setDescription('');
     setAmount('');
     setSplitWith([]);
+    
+    if (currentUser && people.includes(currentUser)) {
+       setPaidBy(currentUser);
+    }
     
     setTimeout(() => setSuccess(''), 3000);
   };
@@ -65,21 +75,23 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense }) => {
     <div className="space-y-6">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
+          <label className="block text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mb-1 ml-1">Expense Detail</label>
           <input
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Expense Name"
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="e.g. Dinner, Fuel, Rent"
+            className="w-full px-4 py-2 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-slate-100 transition-colors"
           />
         </div>
         <div>
+          <label className="block text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mb-1 ml-1">Amount</label>
           <input
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value === '' ? '' : parseFloat(e.target.value))}
-            placeholder="Amount ₹"
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="₹ 0.00"
+            className="w-full px-4 py-2 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-gray-900 dark:text-slate-100 transition-colors"
             min="0.01"
             step="0.01"
           />
@@ -87,32 +99,34 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense }) => {
         
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <h3 className="text-sm font-semibold text-gray-700">
-              Select People:
-              <span className="ml-2 inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-red-500 rounded-full">{splitWith.length}</span>
+            <h3 className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">
+              Split With:
+              <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold text-white bg-blue-500 rounded-full shadow-sm">{splitWith.length}</span>
             </h3>
-            <div className="text-xs">
-                <button type="button" onClick={() => setSplitWith(people)} className="font-medium text-blue-600 hover:text-blue-500">Select All</button>
-                <span className="mx-1 text-gray-300">|</span>
-                <button type="button" onClick={() => setSplitWith([])} className="font-medium text-blue-600 hover:text-blue-500">Deselect All</button>
+            <div className="text-[10px] uppercase font-bold">
+                <button type="button" onClick={() => setSplitWith(people)} className="text-blue-600 dark:text-blue-400 hover:text-blue-800 transition-colors">All</button>
+                <span className="mx-2 text-gray-300 dark:text-slate-700">|</span>
+                <button type="button" onClick={() => setSplitWith([])} className="text-blue-600 dark:text-blue-400 hover:text-blue-800 transition-colors">None</button>
             </div>
           </div>
-          <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
+          <div className="max-h-48 overflow-y-auto space-y-2 pr-2 border border-gray-200 dark:border-slate-800 rounded-xl p-2 bg-gray-50/30 dark:bg-slate-800/20 shadow-inner transition-colors">
             {people.map((person) => (
-              <label key={person} htmlFor={`split-${person}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
-                <div className="flex items-center gap-3">
+              <label key={person} htmlFor={`split-${person}`} className="flex items-center justify-between p-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:border-blue-200 dark:hover:border-blue-800 transition-all">
+                <div className="flex items-center gap-2">
                   <input
                     id={`split-${person}`}
                     type="checkbox"
                     checked={splitWith.includes(person)}
                     onChange={() => handleToggleSplitWith(person)}
-                    className="h-5 w-5 rounded-full border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
                   />
                   <Avatar name={person} />
-                  <span className="font-medium text-gray-800">{person}</span>
+                  <span className={`text-sm ${splitWith.includes(person) ? 'font-bold text-gray-900 dark:text-slate-100' : 'text-gray-600 dark:text-slate-400'}`}>
+                    {person}
+                  </span>
                 </div>
                 {splitWith.includes(person) && (
-                  <span className="text-sm font-semibold text-red-700 bg-red-100 px-2 py-1 rounded-md">
+                  <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded border border-red-100 dark:border-red-800/30">
                     {formatIndianCurrency(splitAmount)}
                   </span>
                 )}
@@ -122,29 +136,29 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ people, addExpense }) => {
         </div>
 
         <div className="pt-2">
-          <label htmlFor="paidBy" className="block text-sm font-medium text-gray-700 mb-1">Paid by</label>
+          <label htmlFor="paidBy" className="block text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase mb-1 ml-1">Who Paid?</label>
           <select
             id="paidBy"
             value={paidBy}
             onChange={(e) => setPaidBy(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-sm font-semibold text-gray-900 dark:text-slate-100 transition-colors"
           >
             {people.map((person) => (
               <option key={person} value={person}>
-                {person}
+                {person} {currentUser === person ? '(Me)' : ''}
               </option>
             ))}
           </select>
         </div>
 
-        {error && <p className="text-sm text-center text-red-600 bg-red-100 p-3 rounded-md">{error}</p>}
-        {success && <p className="text-sm text-center text-green-600 bg-green-100 p-3 rounded-md">{success}</p>}
+        {error && <p className="text-[11px] font-bold text-center text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-900/30">{error}</p>}
+        {success && <p className="text-[11px] font-bold text-center text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-2 rounded border border-green-100 dark:border-green-900/30">{success}</p>}
         
         <button
           type="submit"
-          className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-md shadow-blue-100 dark:shadow-none active:scale-95"
         >
-          Add Expense
+          Save Expense
         </button>
       </form>
     </div>

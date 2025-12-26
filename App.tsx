@@ -1,180 +1,176 @@
-import React, { useState, useEffect } from 'react';
-import PersonInput from './components/PersonInput';
-import ExpenseForm from './components/ExpenseForm';
-import ExpenseList from './components/ExpenseList';
-import Summary from './components/Summary';
-import { Expense } from './types';
-import MonthSelector from './components/MonthSelector';
-import History from './components/History';
-import { PlusIcon } from './components/icons/PlusIcon';
-import { ListIcon } from './components/icons/ListIcon';
-import { RupeeIcon } from './components/icons/RupeeIcon';
-import { UsersIcon } from './components/icons/UsersIcon';
-import { HistoryIcon } from './components/icons/HistoryIcon';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import PersonInput from './components/PersonInput.tsx';
+import ExpenseForm from './components/ExpenseForm.tsx';
+import ExpenseList from './components/ExpenseList.tsx';
+import Summary from './components/Summary.tsx';
+import LoginPage from './components/LoginPage.tsx';
+import { Expense } from './types.ts';
+import MonthSelector from './components/MonthSelector.tsx';
+import History from './components/History.tsx';
+import Avatar from './components/Avatar.tsx';
+import { PlusIcon } from './components/icons/PlusIcon.tsx';
+import { ListIcon } from './components/icons/ListIcon.tsx';
+import { RupeeIcon } from './components/icons/RupeeIcon.tsx';
+import { UsersIcon } from './components/icons/UsersIcon.tsx';
+import { HistoryIcon } from './components/icons/HistoryIcon.tsx';
+import { SunIcon } from './components/icons/SunIcon.tsx';
+import { MoonIcon } from './components/icons/MoonIcon.tsx';
 
 const App: React.FC = () => {
   const getCurrentMonthKey = () => new Date().toISOString().slice(0, 7); // YYYY-MM
+  const DEFAULT_PEOPLE = ['Shubham P.', 'Shubham R.', 'Pranjal', 'Vishal', 'Piyush J.'];
 
-  // --- State Initialization with Lazy Loaders ---
   const [availableMonths, setAvailableMonths] = useState<string[]>(() => {
-    // This function runs only once on the initial render
-    try {
-      const currentMonthKey = getCurrentMonthKey();
-      // --- Migration from old format ---
-      const oldPeopleData = localStorage.getItem('people');
-      const oldExpensesData = localStorage.getItem('expenses');
-      if (oldPeopleData && oldExpensesData) {
-        const dataToSave = { people: JSON.parse(oldPeopleData), expenses: JSON.parse(oldExpensesData) };
-        localStorage.setItem(`expense_data_${currentMonthKey}`, JSON.stringify(dataToSave));
-        localStorage.removeItem('people');
-        localStorage.removeItem('expenses');
-
-        const months = JSON.parse(localStorage.getItem('expense_months') || '[]');
-        if (!months.includes(currentMonthKey)) {
-          months.push(currentMonthKey);
-          const sortedMonths = months.sort().reverse();
-          localStorage.setItem('expense_months', JSON.stringify(sortedMonths));
-          return sortedMonths;
-        }
-      }
-      // --- End Migration ---
-
-      const storedMonths = localStorage.getItem('expense_months');
-      if (storedMonths) {
-        return JSON.parse(storedMonths);
-      }
-    } catch (error) {
-      console.error("Error initializing available months from localStorage:", error);
-    }
-    // Default case if nothing is stored or an error occurs
-    return [getCurrentMonthKey()];
+    const stored = localStorage.getItem('expense_months');
+    return stored ? JSON.parse(stored) : [getCurrentMonthKey()];
   });
 
-  const [currentMonth, setCurrentMonth] = useState<string>(() => availableMonths[0] || getCurrentMonthKey());
+  const [currentMonth, setCurrentMonth] = useState<string>(availableMonths[0] || getCurrentMonthKey());
+  const [activeTab, setActiveTab] = useState('add');
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem('expense_theme') === 'dark' || 
+           (!localStorage.getItem('expense_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  });
+
   const [people, setPeople] = useState<string[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [activeTab, setActiveTab] = useState('add');
+  
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<string | null>(() => {
+    return localStorage.getItem('expense_current_user');
+  });
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('expense_is_logged_in') === 'true';
+  });
 
-  // --- Effect to LOAD data when month changes ---
+  // Handle dark mode toggle
   useEffect(() => {
-    let data;
-    try {
-      const savedData = localStorage.getItem(`expense_data_${currentMonth}`);
-      data = savedData ? JSON.parse(savedData) : null;
-    } catch (error) {
-      console.error(`Error parsing data for month ${currentMonth}:`, error);
-      data = null;
-    }
-
-    if (data && data.people && data.expenses) {
-      // --- Date Migration for old entries ---
-      const migratedExpenses = data.expenses.map((exp: Expense & { date?: string }) => {
-        if (!exp.date) {
-          // Assign a default date (1st of the month) for old entries
-          return { ...exp, date: `${currentMonth}-01` };
-        }
-        return exp;
-      });
-
-      setPeople(data.people);
-      setExpenses(migratedExpenses);
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('expense_theme', 'dark');
     } else {
-      // It's a new month or data is corrupted, let's set initial state
-      let initialPeople = ['Prashant', 'Nikhil', 'Shubham P.', 'Shubham R.', 'Pranjal', 'Vishal', 'Piyush J.'];
-      // Try to inherit people from the most recent month with data
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('expense_theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  // Load data for the current month
+  useEffect(() => {
+    const savedData = localStorage.getItem(`expense_data_${currentMonth}`);
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        setPeople(parsed.people || DEFAULT_PEOPLE);
+        setExpenses(parsed.expenses || []);
+      } catch (e) {
+        setPeople(DEFAULT_PEOPLE);
+        setExpenses([]);
+      }
+    } else {
       const sortedMonths = [...availableMonths].sort().reverse();
-      const lastMonthWithData = sortedMonths.find(m => m < currentMonth && localStorage.getItem(`expense_data_${m}`));
+      const lastKnownMonth = sortedMonths.find(m => m < currentMonth);
+      let inheritedPeople = DEFAULT_PEOPLE;
       
-      if (lastMonthWithData) {
-        try {
-          const lastMonthRawData = localStorage.getItem(`expense_data_${lastMonthWithData}`);
-          const lastMonthParsed = lastMonthRawData ? JSON.parse(lastMonthRawData) : null;
-          if (lastMonthParsed && lastMonthParsed.people && lastMonthParsed.people.length > 0) {
-            initialPeople = lastMonthParsed.people;
-          }
-        } catch (error) {
-          console.error(`Error inheriting people from month ${lastMonthWithData}:`, error);
+      if (lastKnownMonth) {
+        const prevData = localStorage.getItem(`expense_data_${lastKnownMonth}`);
+        if (prevData) {
+          try {
+            const parsedPrev = JSON.parse(prevData);
+            if (parsedPrev.people && parsedPrev.people.length > 0) inheritedPeople = parsedPrev.people;
+          } catch (e) {}
         }
       }
-      setPeople(initialPeople);
+      setPeople(inheritedPeople);
       setExpenses([]);
     }
-  }, [currentMonth, availableMonths]);
+  }, [currentMonth]);
 
-  // --- Effect to SAVE data when it changes ---
+  // Save data
   useEffect(() => {
-    // We prevent saving on the very first render cycle if people/expenses are empty,
-    // to avoid wiping data before it's loaded.
     if (people.length === 0 && expenses.length === 0) {
-        // Check if there should be data for this month. If not, it's safe to save.
-        const existingData = localStorage.getItem(`expense_data_${currentMonth}`);
-        if (existingData) return;
+      const existing = localStorage.getItem(`expense_data_${currentMonth}`);
+      if (existing) return;
     }
-      
-    try {
-      const dataToSave = { people, expenses };
-      localStorage.setItem(`expense_data_${currentMonth}`, JSON.stringify(dataToSave));
 
-      // Also update the list of available months if this is a new one
-      if (!availableMonths.includes(currentMonth)) {
-        const newMonths = [...availableMonths, currentMonth].sort().reverse();
-        setAvailableMonths(newMonths);
-        localStorage.setItem('expense_months', JSON.stringify(newMonths));
-      }
-    } catch (error) {
-      console.error(`Error saving data for month ${currentMonth}:`, error);
+    const dataToSave = { people, expenses };
+    localStorage.setItem(`expense_data_${currentMonth}`, JSON.stringify(dataToSave));
+
+    if (!availableMonths.includes(currentMonth)) {
+      const updatedMonths = [...availableMonths, currentMonth].sort().reverse();
+      setAvailableMonths(updatedMonths);
+      localStorage.setItem('expense_months', JSON.stringify(updatedMonths));
     }
   }, [people, expenses, currentMonth, availableMonths]);
 
+  const handleLogin = useCallback((userName: string) => {
+    setCurrentUser(userName);
+    setIsLoggedIn(true);
+    localStorage.setItem('expense_current_user', userName);
+    localStorage.setItem('expense_is_logged_in', 'true');
+  }, []);
 
-  const addExpense = (expense: Expense) => {
-    setExpenses(prevExpenses => [...prevExpenses, expense]);
-  };
+  const handleLogout = useCallback(() => {
+    setCurrentUser(null);
+    setIsLoggedIn(false);
+    localStorage.removeItem('expense_current_user');
+    localStorage.setItem('expense_is_logged_in', 'false');
+  }, []);
 
-  const removeExpense = (id: string) => {
-    setExpenses(prevExpenses => prevExpenses.filter((expense) => expense.id !== id));
-  };
+  const addExpense = useCallback((expense: Expense) => {
+    setExpenses(prev => [...prev, expense]);
+  }, []);
 
-  const editExpense = (id: string, updatedExpenseData: Partial<Omit<Expense, 'id'>>) => {
-    setExpenses(prevExpenses => prevExpenses.map(expense =>
-      expense.id === id ? { ...expense, ...updatedExpenseData } : expense
-    ));
-  };
+  const removeExpense = useCallback((id: string) => {
+    setExpenses(prev => prev.filter(e => e.id !== id));
+  }, []);
 
-  const handleAddPerson = (name: string) => {
-    if (name.trim() && !people.includes(name.trim())) {
-      setPeople(prevPeople => [...prevPeople, name.trim()]);
-    }
-  };
+  const editExpense = useCallback((id: string, updatedExpenseData: Partial<Omit<Expense, 'id'>>) => {
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...updatedExpenseData } : e));
+  }, []);
 
-  const handleRemovePerson = (personToRemove: string) => {
-    const newPeople = people.filter((person) => person !== personToRemove);
-    setPeople(newPeople);
+  const handleAddPerson = useCallback((name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    setPeople(prev => {
+      if (prev.includes(trimmedName)) return prev;
+      return [...prev, trimmedName];
+    });
+  }, []);
 
-    setExpenses(prevExpenses => prevExpenses.map(exp => ({
-        ...exp,
-        splitWith: exp.splitWith.filter(p => p !== personToRemove),
-        // If the person who paid is removed, reassign to the first person in the new list
-        paidBy: exp.paidBy === personToRemove ? (newPeople[0] || '') : exp.paidBy,
-    })).filter(exp => exp.splitWith.length > 0) // Remove expenses that now have no one to split with
-    );
-  };
+  const handleRemovePerson = useCallback((personToRemove: string) => {
+    if (currentUser === personToRemove) handleLogout();
+    setPeople(prev => prev.filter(p => p !== personToRemove));
+    setExpenses(prev => prev.map(exp => ({
+      ...exp,
+      splitWith: exp.splitWith.filter(p => p !== personToRemove),
+      paidBy: exp.paidBy === personToRemove ? '' : exp.paidBy
+    })).filter(exp => exp.splitWith.length > 0 && exp.paidBy !== ''));
+  }, [currentUser, handleLogout]);
 
-  const handleEditPerson = (oldName: string, newName: string) => {
+  const handleEditPerson = useCallback((oldName: string, newName: string) => {
     const trimmedNewName = newName.trim();
-    if (!trimmedNewName || (people.includes(trimmedNewName) && trimmedNewName !== oldName)) return;
+    if (!trimmedNewName || trimmedNewName === oldName) return;
+    if (currentUser === oldName) handleLogin(trimmedNewName);
+    setPeople(prev => prev.map(p => (p === oldName ? trimmedNewName : p)));
+    setExpenses(prev => prev.map(exp => ({
+      ...exp,
+      paidBy: exp.paidBy === oldName ? trimmedNewName : exp.paidBy,
+      splitWith: exp.splitWith.map(p => (p === oldName ? trimmedNewName : p))
+    })));
+  }, [currentUser, handleLogin]);
 
-    setPeople(prevPeople => prevPeople.map(p => (p === oldName ? trimmedNewName : p)));
-
-    setExpenses(prevExpenses =>
-      prevExpenses.map(exp => ({
-        ...exp,
-        paidBy: exp.paidBy === oldName ? trimmedNewName : exp.paidBy,
-        splitWith: exp.splitWith.map(p => (p === oldName ? trimmedNewName : p)),
-      }))
+  if (!isLoggedIn) {
+    return (
+      <LoginPage 
+        people={people.length > 0 ? people : DEFAULT_PEOPLE} 
+        onLogin={handleLogin} 
+        isDarkMode={isDarkMode} 
+        toggleDarkMode={() => setIsDarkMode(!isDarkMode)} 
+      />
     );
-  };
-  
+  }
+
   const tabs = [
     { id: 'add', label: 'Add', icon: PlusIcon },
     { id: 'list', label: 'List', icon: ListIcon },
@@ -184,47 +180,87 @@ const App: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-md w-full mx-auto">
-      <main className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <header className="text-center p-6 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-blue-600 font-mono tracking-tighter">Expense Calculator</h1>
+    <div className="max-w-md w-full mx-auto animate-in fade-in duration-500">
+      <main className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-xl overflow-hidden min-h-[500px] transition-colors duration-300">
+        <header className="p-6 border-b border-gray-100 dark:border-slate-800 bg-gray-50/20 dark:bg-slate-800/20">
+          <div className="flex justify-between items-start mb-4">
+             <div>
+               <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono tracking-tighter">Split X A505</h1>
+             </div>
+             <div className="flex items-center gap-2">
+               <button 
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400 transition-colors"
+                  aria-label="Toggle Theme"
+               >
+                  {isDarkMode ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+               </button>
+               {currentUser && (
+                 <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-blue-100 dark:border-slate-700 shadow-sm transition-colors">
+                    <Avatar name={currentUser} />
+                    <div className="flex flex-col hidden sm:flex">
+                      <span className="text-[9px] font-bold text-blue-500 dark:text-blue-400 uppercase leading-none">Logged In</span>
+                      <span className="text-xs font-semibold text-gray-800 dark:text-slate-200 leading-none mt-1">{currentUser}</span>
+                    </div>
+                    <button 
+                      onClick={handleLogout}
+                      className="ml-2 text-[10px] text-gray-400 hover:text-red-600 font-bold uppercase transition-colors"
+                    >
+                      Logout
+                    </button>
+                 </div>
+               )}
+             </div>
+          </div>
+          
           <MonthSelector 
             currentMonth={currentMonth}
             availableMonths={availableMonths}
             onMonthChange={setCurrentMonth}
           />
-          <p className="text-sm text-gray-500 mt-4">Made by <span className="text-red-500">♥</span> with A505</p>
         </header>
 
-        <nav className="flex border-b border-gray-200 bg-gray-50/50">
+        <nav className="flex border-b border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/50 transition-colors">
           {tabs.map(tab => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-3 px-2 text-center focus:outline-none transition-colors duration-200
+                className={`flex-1 py-3 px-1 text-center focus:outline-none transition-all duration-200
                   ${activeTab === tab.id
-                    ? 'bg-gray-200 text-gray-800'
-                    : 'text-gray-500 hover:bg-gray-100'}`
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-b-2 border-blue-500'
+                    : 'text-gray-500 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`
                 }
               >
                 <div className="flex flex-col items-center">
                     <Icon className="w-5 h-5 mb-1" />
-                    <span className="text-xs font-medium">{tab.label}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-tight">{tab.label}</span>
                 </div>
               </button>
             );
           })}
         </nav>
 
-        <div className="p-4 sm:p-6 bg-white">
-          {activeTab === 'add' && <ExpenseForm people={people} addExpense={addExpense} />}
+        <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 min-h-[400px] transition-colors duration-300">
+          {activeTab === 'add' && <ExpenseForm people={people} addExpense={addExpense} currentUser={currentUser} />}
           {activeTab === 'list' && <ExpenseList expenses={expenses} removeExpense={removeExpense} people={people} editExpense={editExpense} />}
           {activeTab === 'total' && <Summary people={people} expenses={expenses} />}
-          {activeTab === 'people' && <PersonInput people={people} addPerson={handleAddPerson} removePerson={handleRemovePerson} editPerson={handleEditPerson} />}
+          {activeTab === 'people' && (
+            <PersonInput 
+              people={people} 
+              addPerson={handleAddPerson} 
+              removePerson={handleRemovePerson} 
+              editPerson={handleEditPerson}
+              currentUser={currentUser}
+              onLogin={handleLogin}
+            />
+          )}
           {activeTab === 'history' && <History availableMonths={availableMonths} />}
         </div>
+        <footer className="text-center py-6 bg-gray-50/30 dark:bg-slate-800/30 border-t border-gray-100 dark:border-slate-800 transition-colors">
+          <p className="text-[11px] text-gray-400 dark:text-slate-500 font-medium uppercase tracking-widest">Made by <span className="text-red-500">♥</span> with A505</p>
+        </footer>
       </main>
     </div>
   );
